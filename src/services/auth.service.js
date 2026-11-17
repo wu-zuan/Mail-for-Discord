@@ -1,6 +1,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const url = require('url');
+const readline = require('readline');
 const { google } = require('googleapis');
 const Logger = require('../utils/logger');
 
@@ -17,6 +18,9 @@ class AuthService {
         this.storage = null;
     }
 
+    /**
+     * @param {import('./discord.service')|null} discordService 純 Webhook 模式時為 null，授權流程改走終端機
+     */
     async getClient(discordService, targetUserId, storage) {
         if (this.client) return this.client;
         this.storage = storage;
@@ -66,6 +70,12 @@ class AuthService {
             await fs.unlink(this.CREDENTIALS_PATH).catch(() => { });
             return fileCreds;
         } catch (e) { }
+
+        if (!discordService) {
+            this.logger.error('找不到 Google 用戶端憑證。');
+            this.logger.error(`純 Webhook 模式無法透過 Discord 上傳檔案，請將 Google Cloud Console 下載的 OAuth 用戶端 JSON 另存為：\n  ${this.CREDENTIALS_PATH}\n然後重新啟動程式 (檔案讀取後會加密存入資料庫並自動刪除)。`);
+            return null;
+        }
 
         await discordService.sendUploadCredentialsMessage(targetUserId);
 
@@ -138,6 +148,10 @@ class AuthService {
             scope: this.SCOPES,
         });
 
+        if (!discordService) {
+            return this._authenticateViaConsole(oAuth2Client, authorizeUrl);
+        }
+
         await discordService.sendAuthMessage(targetUserId, authorizeUrl);
         this.logger.info('已將 Google 授權連結發送至您的 Discord 私訊中，請前往點擊。');
 
@@ -208,6 +222,54 @@ class AuthService {
             };
             discordService.client.on('interactionCreate', listener);
         });
+    }
+
+    /**
+     * 純 Webhook 模式 (沒有 Bot) 的終端機授權流程：
+     * 在 console 印出授權連結，讓使用者貼回重新導向後的完整網址或授權碼。
+     */
+    async _authenticateViaConsole(oAuth2Client, authorizeUrl) {
+        console.log('\n============================================================');
+        console.log('🔐 需要您的 Google 授權 (純 Webhook 模式，於終端機完成)');
+        console.log('------------------------------------------------------------');
+        console.log('1. 請用瀏覽器開啟以下連結並核准權限：\n');
+        console.log(authorizeUrl);
+        console.log('\n2. 授權完成後瀏覽器會導向 http://127.0.0.1/?code=... 並顯示「無法連線」，這是正常的。');
+        console.log('3. 請把網址列的完整網址 (或 code 參數本身) 貼到下方並按 Enter。');
+        console.log('============================================================\n');
+
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const ask = (question) => new Promise(resolve => rl.question(question, answer => resolve(answer.trim())));
+
+        try {
+            while (true) {
+                const text = await ask('請貼上網址或授權碼: ');
+                let finalCode = null;
+                if (text.startsWith('http')) {
+                    try {
+                        finalCode = new url.URL(text).searchParams.get('code');
+                    } catch (e) { }
+                } else if (text.length > 20) {
+                    finalCode = text;
+                }
+
+                if (!finalCode) {
+                    console.log('❌ 無法從輸入中解析出授權碼，請再試一次。\n');
+                    continue;
+                }
+
+                try {
+                    const { tokens } = await oAuth2Client.getToken(finalCode);
+                    oAuth2Client.setCredentials(tokens);
+                    this.logger.info('✅ Google 帳號授權成功！系統已正式開始運作。');
+                    return oAuth2Client;
+                } catch (err) {
+                    console.log('❌ 授權碼無效或已過期，請重新開啟上方連結取得新的授權碼。\n');
+                }
+            }
+        } finally {
+            rl.close();
+        }
     }
 
     async _saveTokens(tokens) {

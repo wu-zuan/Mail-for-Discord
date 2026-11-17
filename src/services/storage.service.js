@@ -110,7 +110,9 @@ class StorageService {
 
     _decryptSession(text, isEncrypt = false) {
         const crypto = require('crypto');
-        const tokenStr = process.env.DISCORD_TOKEN || 'fallback_secret_key_if_no_discord_token_provided';
+        // 優先使用 STORAGE_SECRET，其次沿用 DISCORD_TOKEN (維持舊版資料可解密)，
+        // 純 webhook 模式下若兩者都未設定則退回預設金鑰。
+        const tokenStr = process.env.STORAGE_SECRET || process.env.DISCORD_TOKEN || 'fallback_secret_key_if_no_discord_token_provided';
         const key = crypto.createHash('sha256').update(tokenStr).digest();
         const algorithm = 'aes-256-cbc';
 

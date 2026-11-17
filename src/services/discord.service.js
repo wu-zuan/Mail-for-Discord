@@ -131,6 +131,20 @@ class DiscordService {
         }
     }
 
+    async sendText(userId, content) {
+        if (!this.isReady) {
+            this.logger.warn('Bot 尚未就緒，無法發送訊息');
+            return;
+        }
+        try {
+            const user = await this.client.users.fetch(userId);
+            await user.send(content);
+        } catch (error) {
+            this.logger.error('發送文字私訊失敗', error);
+            throw error;
+        }
+    }
+
     updatePresence(text, status = 'online') {
         if (!this.isReady) return;
         const { ActivityType } = require('discord.js');

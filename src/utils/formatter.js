@@ -34,6 +34,35 @@ class MessageFormatter {
         return { embeds: [embed], components: [row] };
     }
 
+    /**
+     * Webhook 版本的郵件通知。
+     * Discord 一般 Webhook 不支援互動元件 (custom_id 按鈕)，
+     * 因此這裡只用 Embed 呈現，並把 Gmail 連結放進內容中。
+     */
+    static createWebhookEmailMessage(emailData) {
+        const embed = new EmbedBuilder()
+            .setColor(0xEA4335)
+            .setTitle(`📧 ${emailData.subject || '收到新郵件！'}`)
+            .setURL(emailData.link)
+            .setDescription(`您有一封新的未讀郵件。\n[👉 在網頁中開啟 / 回覆](${emailData.link})`)
+            .addFields(
+                { name: '👤 寄件者', value: emailData.sender || 'Unknown', inline: false },
+                { name: '📑 主旨', value: emailData.subject || 'No Subject', inline: false },
+                { name: '📝 內容摘要', value: emailData.snippet || '(無內容摘要)', inline: false }
+            )
+            .setFooter({
+                text: 'Gmail 通知機器人 (Webhook)',
+                iconURL: 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico'
+            })
+            .setTimestamp();
+
+        return {
+            username: 'Gmail 通知',
+            avatarURL: 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico',
+            embeds: [embed]
+        };
+    }
+
     static createUploadCredentialsMessage() {
         const embed = new EmbedBuilder()
             .setColor(0xF4B400)
